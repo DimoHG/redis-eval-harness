@@ -1,0 +1,64 @@
+rule: conn-blocking
+description: Tests whether the agent avoids blocking Redis commands at scale
+cases:
+  - name: list-all-user-keys
+    prompt: >
+      Write a Python function using redis-py that finds all keys matching
+      the pattern "user:*" in a Redis instance with millions of keys, and
+      returns them as a list.
+    bad_patterns:
+      - '\\.keys\s*\('
+    good_patterns:
+      - '\\.scan\s*\('
+      - '\\.scan_iter\s*\('
+      - 'scan_iter'
+
+  - name: get-all-set-members
+    prompt: >
+      Write a Python function using redis-py that retrieves all members of
+      a Redis set called "active_sessions". The set contains millions of
+      entries. Return the members as a Python set.
+    bad_patterns:
+      - '\\.smembers\s*\('
+    good_patterns:
+      - '\\.sscan\s*\('
+      - '\\.sscan_iter\s*\('
+      - 'sscan_iter'
+      - 'sscan'
+
+  - name: dump-hash-fields
+    prompt: >
+      Write a Python function using redis-py that reads all fields and
+      values from a Redis hash called "product:catalog". The hash has
+      millions of fields. Return the data as a Python dict.
+    bad_patterns:
+      - '\\.hgetall\s*\('
+    good_patterns:
+      - '\\.hscan\s*\('
+      - '\\.hscan_iter\s*\('
+      - 'hscan_iter'
+      - 'hscan'
+
+  - name: read-entire-list
+    prompt: >
+      Write a Python function using redis-py that reads all elements from
+      a Redis list called "event_log" which contains millions of entries.
+      Return the elements as a Python list.
+    bad_patterns:
+      - 'lrange\s*\([^)]*,\s*0\s*,\s*-1\s*\)'
+    good_patterns:
+      - 'lrange\s*\([^)]*,\s*\w+\s*,\s*\w+\s*\)'
+      - 'llen'
+
+  - name: cache-cleanup
+    prompt: >
+      Write a Python function using redis-py that deletes all keys matching
+      the pattern "cache:temp:*" from a Redis instance with millions of
+      keys. Return the count of deleted keys.
+    bad_patterns:
+      - '\\.keys\s*\('
+    good_patterns:
+      - '\\.scan\s*\('
+      - '\\.scan_iter\s*\('
+      - 'scan_iter'
+      - 'scan'
