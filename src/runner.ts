@@ -1,9 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { CONFIG } from "./config.js";
 import { scoreResponse } from "./scorer.js";
-import type { EvalSuite, RunResult } from "./types.js";
+import type { EvalCase, EvalSuite, RunResult } from "./types.js";
 
-const client = new Anthropic();
+let client: Anthropic;
+
+function getClient(): Anthropic {
+  if (!client) client = new Anthropic();
+  return client;
+}
 
 async function callClaude(
   userPrompt: string,
@@ -12,7 +17,7 @@ async function callClaude(
   const maxRetries = 3;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const response = await client.messages.create({
+      const response = await getClient().messages.create({
         model: CONFIG.model,
         max_tokens: CONFIG.maxTokens,
         temperature: CONFIG.temperature,
@@ -26,9 +31,9 @@ async function callClaude(
     } catch (err: unknown) {
       const isRetryable =
         err instanceof Error &&
-        ("status" in err &&
-          ((err as { status: number }).status === 429 ||
-            (err as { status: number }).status >= 500));
+        "status" in err &&
+        ((err as { status: number }).status === 429 ||
+          (err as { status: number }).status >= 500);
 
       if (!isRetryable || attempt === maxRetries - 1) throw err;
 
@@ -42,45 +47,62 @@ async function callClaude(
   throw new Error("Unreachable");
 }
 
+interface Task {
+  evalCase: EvalCase;
+  mode: "baseline" | "enhanced";
+  runIndex: number;
+  systemPrompt?: string;
+}
+
+async function runTask(task: Task): Promise<RunResult> {
+  const response = await callClaude(task.evalCase.prompt, task.systemPrompt);
+  const score = scoreResponse(response, task.evalCase);
+  return {
+    caseName: task.evalCase.name,
+    mode: task.mode,
+    runIndex: task.runIndex,
+    response,
+    ...score,
+  };
+}
+
+async function runPool(
+  tasks: Task[],
+  concurrency: number
+): Promise<RunResult[]> {
+  const results: RunResult[] = new Array(tasks.length);
+  let nextIdx = 0;
+  let completed = 0;
+  const total = tasks.length;
+
+  async function worker() {
+    while (nextIdx < tasks.length) {
+      const idx = nextIdx++;
+      const task = tasks[idx];
+      process.stderr.write(
+        `  [${++completed}/${total}] ${task.evalCase.name} ${task.mode} run ${task.runIndex + 1}...\n`
+      );
+      results[idx] = await runTask(task);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
 export async function runEval(
   suite: EvalSuite,
   ruleContent: string
 ): Promise<RunResult[]> {
-  const results: RunResult[] = [];
-  const totalCalls = suite.cases.length * CONFIG.runsPerCase * 2;
-  let completed = 0;
+  const tasks: Task[] = [];
 
   for (const evalCase of suite.cases) {
     for (let run = 0; run < CONFIG.runsPerCase; run++) {
-      // Baseline
-      process.stderr.write(
-        `  [${++completed}/${totalCalls}] ${evalCase.name} baseline run ${run + 1}...\n`
-      );
-      const baselineResponse = await callClaude(evalCase.prompt);
-      const baselineScore = scoreResponse(baselineResponse, evalCase);
-      results.push({
-        caseName: evalCase.name,
-        mode: "baseline",
-        runIndex: run,
-        response: baselineResponse,
-        ...baselineScore,
-      });
-
-      // Enhanced
-      process.stderr.write(
-        `  [${++completed}/${totalCalls}] ${evalCase.name} enhanced run ${run + 1}...\n`
-      );
-      const enhancedResponse = await callClaude(evalCase.prompt, ruleContent);
-      const enhancedScore = scoreResponse(enhancedResponse, evalCase);
-      results.push({
-        caseName: evalCase.name,
-        mode: "enhanced",
-        runIndex: run,
-        response: enhancedResponse,
-        ...enhancedScore,
-      });
+      tasks.push({ evalCase, mode: "baseline", runIndex: run });
+      tasks.push({ evalCase, mode: "enhanced", runIndex: run, systemPrompt: ruleContent });
     }
   }
 
-  return results;
+  return runPool(tasks, CONFIG.concurrency);
 }
