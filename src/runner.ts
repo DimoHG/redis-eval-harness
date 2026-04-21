@@ -10,10 +10,16 @@ function getClient(): Anthropic {
   return client;
 }
 
+interface ClaudeResult {
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 async function callClaude(
   userPrompt: string,
   systemPrompt?: string
-): Promise<string> {
+): Promise<ClaudeResult> {
   const maxRetries = 3;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -26,8 +32,12 @@ async function callClaude(
       });
 
       const block = response.content[0];
-      if (block.type === "text") return block.text;
-      return "";
+      const text = block?.type === "text" ? block.text : "";
+      return {
+        text,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      };
     } catch (err: unknown) {
       const isRetryable =
         err instanceof Error &&
@@ -55,13 +65,18 @@ interface Task {
 }
 
 async function runTask(task: Task): Promise<RunResult> {
-  const response = await callClaude(task.evalCase.prompt, task.systemPrompt);
-  const score = scoreResponse(response, task.evalCase);
+  const { text, inputTokens, outputTokens } = await callClaude(
+    task.evalCase.prompt,
+    task.systemPrompt
+  );
+  const score = scoreResponse(text, task.evalCase);
   return {
     caseName: task.evalCase.name,
     mode: task.mode,
     runIndex: task.runIndex,
-    response,
+    response: text,
+    inputTokens,
+    outputTokens,
     ...score,
   };
 }
