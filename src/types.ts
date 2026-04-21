@@ -3,6 +3,7 @@ export interface EvalCase {
   prompt: string;
   bad_patterns: string[];
   good_patterns: string[];
+  max_tokens?: number;
 }
 
 export interface EvalSuite {

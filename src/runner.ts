@@ -18,6 +18,7 @@ interface ClaudeResult {
 
 async function callClaude(
   userPrompt: string,
+  maxTokens: number,
   systemPrompt?: string
 ): Promise<ClaudeResult> {
   const maxRetries = 3;
@@ -25,7 +26,7 @@ async function callClaude(
     try {
       const response = await getClient().messages.create({
         model: CONFIG.model,
-        max_tokens: CONFIG.maxTokens,
+        max_tokens: maxTokens,
         temperature: CONFIG.temperature,
         ...(systemPrompt ? { system: systemPrompt } : {}),
         messages: [{ role: "user", content: userPrompt }],
@@ -65,8 +66,10 @@ interface Task {
 }
 
 async function runTask(task: Task): Promise<RunResult> {
+  const maxTokens = task.evalCase.max_tokens ?? CONFIG.maxTokens;
   const { text, inputTokens, outputTokens } = await callClaude(
     task.evalCase.prompt,
+    maxTokens,
     task.systemPrompt
   );
   const score = scoreResponse(text, task.evalCase);
