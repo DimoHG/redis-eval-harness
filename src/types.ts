@@ -19,6 +19,8 @@ export interface RunResult {
   pass: boolean;
   matchedBad: string[];
   matchedGood: string[];
+  inputTokens: number;
+  outputTokens: number;
 }
 
 export interface CaseReport {
@@ -26,4 +28,8 @@ export interface CaseReport {
   baselinePassRate: number;
   enhancedPassRate: number;
   improvement: number;
+  baselineAvgInputTokens: number;
+  baselineAvgOutputTokens: number;
+  enhancedAvgInputTokens: number;
+  enhancedAvgOutputTokens: number;
 }
